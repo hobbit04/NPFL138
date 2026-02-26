@@ -11,7 +11,7 @@ from ..metric import Metric
 from ..utils import broadcast_to_prefix
 
 
-class Mean(Metric):
+class Mean(torch.nn.Module, Metric):
     """A class tracking the (optionally weighted) mean of given values."""
 
     def __init__(self, device: torch.device | None = None) -> None:
@@ -49,7 +49,7 @@ class Mean(Metric):
     def compute(self) -> torch.Tensor:
         return self._total / self._count
 
-    def reset(self):
+    def reset(self) -> Self:
         self._total.zero_()
         self._count.zero_()
         return self

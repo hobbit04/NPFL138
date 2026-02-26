@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "npfl138"
-version = "2526.1.0"
+version = "2526.2.1"
 authors = [
   { name="Milan Straka", email="straka@ufal.mff.cuni.cz" },
 ]
@@ -27,6 +27,7 @@ dependencies = [
   "pygame-ce ~= 2.5.6",
   # TensorBoard for inspecting logs
   "tensorboard ~= 2.20.0",
+  "setuptools < 80.9",  # ==82 removes pkg_resources; <80.9 does not warn about deprecation
   # Matplotlib for plotting
   "matplotlib ~= 3.10.8",
 ]
