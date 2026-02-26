@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Deep Learning – ÚFAL Course NPFL138
 
 This repository contains materials to the
@@ -7,3 +8,7 @@ All created content is available under
 [CC BY-SA 4.0 license](https://creativecommons.org/licenses/by-sa/4.0/),
 while all existing materials (mostly images and excerpts from papers) are
 properly referenced and are subject to original licensing.
+=======
+# NPFL138
+Charles University Deep Learning course lab repo
+>>>>>>> ca11353b324bdff6b16028d5da0bdc15b8038192
