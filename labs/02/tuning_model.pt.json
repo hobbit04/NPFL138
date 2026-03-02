@@ -1,0 +1,16 @@
+{
+  "args: argparse.Namespace": {
+    "evaluate": false,
+    "recodex": false,
+    "render": false,
+    "seed": 42,
+    "threads": 4,
+    "batch_size": 64,
+    "epochs": 100,
+    "h1": 256,
+    "h2": 64,
+    "lr": 0.005,
+    "eval_episodes": 20,
+    "model": "tuning_model.pt"
+  }
+}

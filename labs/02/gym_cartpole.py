@@ -18,8 +18,8 @@ parser.add_argument("--render", default=False, action="store_true", help="Render
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
 parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
 # If you add more arguments, ReCodEx will keep them with your default values.
-parser.add_argument("--batch_size", default=..., type=int, help="Batch size.")
-parser.add_argument("--epochs", default=..., type=int, help="Number of epochs.")
+parser.add_argument("--batch_size", default=20, type=int, help="Batch size.")
+parser.add_argument("--epochs", default=150, type=int, help="Number of epochs.")
 parser.add_argument("--model", default="gym_cartpole_model.pt", type=str, help="Output model path.")
 
 
@@ -62,12 +62,21 @@ class Model(npfl138.TrainableModule):
         # TODO: Create the model layers, with the last layer having 2 outputs.
         # To store a list of layers, you can use either `torch.nn.Sequential`
         # or `torch.nn.ModuleList`; you should *not* use a Python list.
-        ...
+        h1 = 80
+        h2 = 80
+
+        self.model = torch.nn.Sequential(
+            torch.nn.Linear(GymCartpoleDataset.FEATURES, h1),
+            torch.nn.Tanh(),
+            
+            torch.nn.Linear(h1, h2),
+            torch.nn.Tanh(),
+
+            torch.nn.Linear(h2, 2)
+        )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        # TODO: Run your model and return its output.
-        ...
-
+        return self.model(inputs)
 
 def main(args: argparse.Namespace) -> torch.nn.Module | None:
     # Set the random seed and the number of threads.
@@ -91,7 +100,20 @@ def main(args: argparse.Namespace) -> torch.nn.Module | None:
         model = Model(args)
 
         # TODO: Configure the model for training.
-        model.configure(...)
+        optimizer=torch.optim.Adam(model.parameters(), lr=0.001)
+        total_steps = args.epochs * len(train) 
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, 
+            T_max=total_steps, 
+            eta_min=0.0001
+        )
+
+        model.configure(
+            optimizer=optimizer,
+            scheduler=scheduler,
+            loss=torch.nn.CrossEntropyLoss(),
+            device="auto"
+        )
 
         # TODO: Train the model.
         #

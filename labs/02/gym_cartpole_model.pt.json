@@ -1,0 +1,12 @@
+{
+  "args: argparse.Namespace": {
+    "evaluate": false,
+    "recodex": false,
+    "render": false,
+    "seed": 42,
+    "threads": 1,
+    "batch_size": 20,
+    "epochs": 150,
+    "model": "gym_cartpole_model.pt"
+  }
+}
