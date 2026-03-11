@@ -5,6 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 import os
 import random
+import sys
 
 import numpy as np
 import torch
@@ -81,7 +82,7 @@ def startup(
         expandable_segments = bool(expandable_segments)
         env_variables = [os.environ.get(k, "") for k in ("PYTORCH_ALLOC_CONF", "PYTORCH_CUDA_ALLOC_CONF")]
         if not any(f"expandable_segments:{str(not expandable_segments)}" in env_var for env_var in env_variables):
-            if torch.cuda.is_available() and torch.version.cuda:
+            if torch.cuda.is_available() and torch.version.cuda and "win" not in sys.platform:
                 # Since PyTorch 2.10, we need to use the accelerator API instead of CUDA to set expandable segments.
                 set_allocator_settings = getattr(torch._C, "_accelerator_setAllocatorSettings", None)
                 set_allocator_settings = set_allocator_settings or torch.cuda.memory._set_allocator_settings
@@ -90,8 +91,9 @@ def startup(
     # If ReCodEx mode is requested, apply various overrides for better replicability.
     if recodex:
         # Do not use accelerators.
+        torch.accelerator.is_available = lambda: False
         torch.cuda.is_available = lambda: False
-        torch.backends.mps.is_available = lambda: False
+        torch.mps.is_available = lambda: False
         torch.xpu.is_available = lambda: False
 
         # Make initializers deterministic.
@@ -105,3 +107,15 @@ def startup(
         original_dataloader_init = torch.utils.data.DataLoader.__init__
         torch.utils.data.DataLoader.__init__ = lambda self, dataset, *args, **kwargs: original_dataloader_init(
             self, dataset, *args, **kwargs | {"generator": torch.Generator().manual_seed(seed)})
+
+        # Use an independent generator for dropouts.
+        dropout_generator = torch.random.get_rng_state()
+        original_functional_dropout = torch.nn.functional.dropout
+        def dropout_with_generator(input, p=0.5, training=True, inplace=False):  # noqa: E301
+            nonlocal dropout_generator
+            with torch.random.fork_rng(devices=[]):
+                torch.random.set_rng_state(dropout_generator)
+                output = original_functional_dropout(input, p, training, inplace)
+                dropout_generator = torch.random.get_rng_state()
+            return output
+        torch.nn.functional.dropout = dropout_with_generator

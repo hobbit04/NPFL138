@@ -59,7 +59,7 @@ def main(args: argparse.Namespace) -> tuple[float, float, float]:
     else:
         crossentropy = -1 * np.sum(data_dist * np.log(model_dist))
 
-    # TODO: Compute KL-divergence D_KL(data distribution, model_distribution),
+    # TODO: Compute KL-divergence D_KL(data distribution, model distribution),
     # again using `np.inf` when needed.
     if crossentropy == np.inf:
         kl_divergence = np.inf
