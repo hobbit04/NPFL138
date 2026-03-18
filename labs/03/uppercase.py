@@ -13,19 +13,19 @@ from npfl138.datasets.uppercase_data import UppercaseData
 # `alphabet_size`, `batch_size`, `epochs`, and `window`.
 # Also, you can set the number of threads to 0 to use all your CPU cores.
 parser = argparse.ArgumentParser()
-parser.add_argument("--alphabet_size", default=..., type=int, help="If given, use this many most frequent chars.")
-parser.add_argument("--batch_size", default=..., type=int, help="Batch size.")
-parser.add_argument("--epochs", default=..., type=int, help="Number of epochs.")
+parser.add_argument("--alphabet_size", default=60, type=int, help="If given, use this many most frequent chars.")
+parser.add_argument("--batch_size", default=512, type=int, help="Batch size.")
+parser.add_argument("--epochs", default=15, type=int, help="Number of epochs.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
-parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
-parser.add_argument("--window", default=..., type=int, help="Window size to use.")
+parser.add_argument("--threads", default=0, type=int, help="Maximum number of threads to use.")
+parser.add_argument("--window", default=5, type=int, help="Window size to use.")
 
 
 class Dataset(torch.utils.data.Dataset):
     # A dataset must always implement at least `__len__` and `__getitem__`.
     def __init__(self, uppercase_dataset: UppercaseData.Dataset):
         self.windows = uppercase_dataset.windows
-        self.labels = uppercase_dataset.labels
+        self.labels = uppercase_dataset.labels.float()
 
     def __len__(self):
         return len(self.windows)
@@ -61,12 +61,26 @@ class Model(npfl138.TrainableModule):
         # - Alternatively, you can experiment with `torch.nn.Embedding`s (an
         #   efficient implementation of one-hot encoding followed by a Dense layer)
         #   and flattening afterwards, or suitably using `torch.nn.EmbeddingBag`.
-        ...
-
+        self.window = self._args.window
+        self.batch_size = self._args.batch_size
+        self.embedding = torch.nn.Embedding(
+            num_embeddings=self._args.alphabet_size,
+            embedding_dim=32
+        )
+        self.classifier = torch.nn.Sequential(
+            torch.nn.Linear((2 * self.window + 1) * 32, 128),  # embedding_dim=32
+            torch.nn.ReLU(),
+            torch.nn.Linear(128, 64),
+            torch.nn.ReLU(),
+            torch.nn.Linear(64, 1)
+        )
     def forward(self, windows: torch.Tensor) -> torch.Tensor:
         # TODO: Implement the forward pass.
-        ...
+        x = self.embedding(windows)
+        x = torch.flatten(x, start_dim=1)
 
+        logits = self.classifier(x)
+        return logits.squeeze(-1)
 
 def main(args: argparse.Namespace) -> None:
     # Set the random seed and the number of threads.
@@ -86,7 +100,14 @@ def main(args: argparse.Namespace) -> None:
 
     # TODO: Implement a suitable model, optionally including regularization, select
     # good hyperparameters, and train the model.
-    model = ...
+    model = Model(args)
+    model.configure(
+        optimizer=torch.optim.Adam(model.parameters(), lr=0.001),
+        loss=torch.nn.BCEWithLogitsLoss(),
+        metrics={"accuracy": torchmetrics.Accuracy(task="binary")}
+    )
+
+    model.fit(train, epochs=args.epochs, dev=dev)
 
     # TODO: Generate correctly capitalized test set and write the result to `predictions_file`,
     # which is by default `uppercase_test.txt` in the `args.logdir` directory).
@@ -94,11 +115,17 @@ def main(args: argparse.Namespace) -> None:
     with open(os.path.join(args.logdir, "uppercase_test.txt"), "w", encoding="utf-8") as predictions_file:
         # We start by generating the network test set predictions; if you modified the `test` dataloader
         # or your model does not process the dataset windows, you might need to adjust the following line.
-        predictions = model.predict(test, data_with_labels=True)
-
+        predictions = list(model.predict(test, data_with_labels=True))
+        
         # Now you need to utilize the network predictions and the unannotated test data (lowercased text)
         # available in `uppercase_data.test.text` to produce capitalized text and print it to the `predictions_file`.
-        ...
+        
+        text = uppercase_data.test.text
+        for i in range(len(text)):
+            if predictions[i] > 0:  # Make it upper
+                predictions_file.write(text[i].upper())
+            else:
+                predictions_file.write(text[i])
 
 
 if __name__ == "__main__":

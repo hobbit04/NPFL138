@@ -60,9 +60,14 @@ def main(args: argparse.Namespace) -> tuple[list[float], list[float]]:
         print("Done")
 
     individual_accuracies, ensemble_accuracies = [], []
+
+    
+    labels = torch.cat([batch_label for _, batch_label in dev])
+    metric = torchmetrics.Accuracy(task="multiclass", num_classes=MNIST.LABELS)
+
     for model in range(args.models):
         # TODO: Compute the accuracy on the dev set for the individual `models[model]`.
-        individual_accuracy = ...
+        individual_accuracy = models[model].evaluate(dataloader=dev)["test:accuracy"]
 
         # TODO: Compute the accuracy on the dev set for the ensemble `models[0:model+1]`.
         #
@@ -76,7 +81,14 @@ def main(args: argparse.Namespace) -> tuple[list[float], list[float]]:
         #    on the `dev` dataloader (with `data_with_labels=True` to indicate the dataloader
         #    also contains the labels) and average the predicted distributions. To measure
         #    accuracy, either do it completely manually or use `torchmetrics.Accuracy`.
-        ensemble_accuracy = ...
+        all_probs = []
+        for m in models[0:model+1]:
+            pred = torch.cat(list(m.predict(dev, data_with_labels=True, whole_batches=True)))
+            pred = torch.nn.functional.softmax(pred, dim=-1)
+            all_probs.append(pred)
+        avg_probs = torch.stack(all_probs).mean(dim=0)
+        ensemble_accuracy = metric(avg_probs, labels).item()
+        metric.reset()
 
         # Store the accuracies
         individual_accuracies.append(individual_accuracy)
