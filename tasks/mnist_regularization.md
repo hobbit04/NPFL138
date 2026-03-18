@@ -7,11 +7,11 @@ You will learn how to implement three regularization methods in this assignment.
 Start with the
 [mnist_regularization.py](https://github.com/ufal/npfl138/tree/master/labs/03/mnist_regularization.py)
 template and implement the following:
-- Allow using dropout with rate `args.dropout`. Add a dropout layer after the
+- Allow using dropout with the rate `args.dropout`. Add a dropout layer after the
   first `Flatten` and also after all `Linear` hidden layers (but not after the
   output layer).
-- Allow using AdamW with weight decay with strength of `args.weight_decay`,
-  making sure the weight decay is not applied on bias.
+- Allow using AdamW with the weight decay of strength `args.weight_decay`,
+  ensuring that weight decay is not applied to bias parameters.
 - Allow using label smoothing with weight `args.label_smoothing`.
 
 In addition to submitting the task in ReCodEx, also run the following
@@ -31,7 +31,7 @@ Epoch 1/1 0.5s loss=0.8099 accuracy=0.7600 dev:loss=0.3311 dev:accuracy=0.9066
 
 2. `python3 mnist_regularization.py --recodex --epochs=1 --dropout=0.5 --hidden_layers 300 300`
 ```
-Epoch 1/1 0.6s loss=1.4732 accuracy=0.4886 dev:loss=0.4817 dev:accuracy=0.8772
+Epoch 1/1 0.6s loss=1.4733 accuracy=0.4886 dev:loss=0.4824 dev:accuracy=0.8788
 ```
 
 3. `python3 mnist_regularization.py --recodex --epochs=1 --weight_decay=0.1`
