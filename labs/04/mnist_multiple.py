@@ -80,8 +80,8 @@ class Model(npfl138.TrainableModule):
         # obtaining a 200-dimensional feature vector of each image.
         #
         # Using the computed representations, the model should produce four outputs:
-        # - first, compute _direct comparison_ whether the first digit is
-        #   greater than the second, by
+        # - first, compute _direct comparison_, a tensor of bools indicating whether
+        #   the first digit is greater than the second, by
         #   - concatenating the two 200-dimensional image feature vectors,
         #   - processing them using another 200-neuron ReLU linear layer,
         #   - computing one output using a linear layer and the **sigmoid** activation;
