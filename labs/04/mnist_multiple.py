@@ -26,7 +26,7 @@ class DatasetOfPairs(torch.utils.data.Dataset):
 
     def __len__(self):
         # TODO: The new dataset has half the size of the original one.
-        return ...
+        return len(self._dataset) // 2
 
     def __getitem__(self, index: int) -> tuple[tuple[torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]]:
         # TODO: Given an `index`, generate an example composed of two input examples.
@@ -34,14 +34,37 @@ class DatasetOfPairs(torch.utils.data.Dataset):
         # each being a dictionary with keys "image" and "label", return a pair `(input, output)` with
         # - `input` being a pair of images, each converted to `torch.float32` and divided by 255,
         # - `output` being a pair of labels.
-        return ...
+        examples = self._dataset[2*index], self._dataset[2*index + 1]
+        input = (self._dataset[2*index]['image'].to(torch.float32) / 255,
+                self._dataset[2*index+1]['image'].to(torch.float32) / 255,)
+        output = (self._dataset[2*index]['label'],
+                self._dataset[2*index+1]['label'])
+        return (input, output)
 
 
 class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace) -> None:
         super().__init__()
         # TODO: Create all layers required to implement the forward pass.
-        ...
+        self.main_model = torch.nn.Sequential(
+                torch.nn.LazyConv2d(10, 3, 2, 0),
+                torch.nn.ReLU(),
+                torch.nn.LazyConv2d(20, 3, 2, 0),
+                torch.nn.ReLU(),
+                torch.nn.Flatten(),
+                torch.nn.LazyLinear(200),
+                torch.nn.ReLU()
+            )
+        self.direct_comparison_model = torch.nn.Sequential(
+                torch.nn.LazyLinear(200),
+                torch.nn.ReLU(),
+                torch.nn.LazyLinear(1),
+                torch.nn.Sigmoid()
+            )
+        self.num_predict_model = torch.nn.Sequential(
+                torch.nn.LazyLinear(10)
+            )
+
 
     def forward(
         self, first: torch.Tensor, second: torch.Tensor,
@@ -69,10 +92,18 @@ class Model(npfl138.TrainableModule):
         # - finally, compute _indirect comparison_ whether the first digit
         #   is greater than second, by comparing the predictions from the above
         #   two outputs.
-        direct_comparison = ...
-        digit_1 = ...
-        digit_2 = ...
-        indirect_comparison = ...
+        fv1 = self.main_model(first)
+        fv2 = self.main_model(second)
+        concatted_fv = torch.concat([fv1, fv2], dim=1)
+
+
+        direct_comparison = self.direct_comparison_model(concatted_fv)
+        digit_1 = self.num_predict_model(fv1)
+        digit_2 = self.num_predict_model(fv2)
+
+        pred_1 = torch.argmax(digit_1, dim=1)
+        pred_2 = torch.argmax(digit_2, dim=1)
+        indirect_comparison = (pred_1 > pred_2).float()
 
         return direct_comparison, digit_1, digit_2, indirect_comparison
 
@@ -86,9 +117,12 @@ class Model(npfl138.TrainableModule):
         # TODO: Compute the required losses. Note that the `direct_comparison_pred` is
         # really a probability (sigmoid was applied), while the `digit_1_pred` and
         # `digit_2_pred` are logits of 10-class classification.
-        direct_comparison_loss = ...
-        digit_1_loss = ...
-        digit_2_loss = ...
+        bin_loss = torch.nn.BCELoss()
+        multi_loss = torch.nn.CrossEntropyLoss()
+
+        direct_comparison_loss = bin_loss(direct_comparison_pred, (digit_1_true > digit_2_true).float().view(-1, 1))
+        digit_1_loss = multi_loss(digit_1_pred, digit_1_true)
+        digit_2_loss = multi_loss(digit_2_pred, digit_2_true)
 
         return direct_comparison_loss + digit_1_loss + digit_2_loss
 
@@ -99,8 +133,10 @@ class Model(npfl138.TrainableModule):
         digit_1_true, digit_2_true = y_true
 
         # TODO: Update two metrics -- the `direct_comparison` and the `indirect_comparison`.
-        self.metrics["direct_comparison"].update(...)
-        self.metrics["indirect_comparison"].update(...)
+        ground_truth = (digit_1_true > digit_2_true).float().unsqueeze(1)
+
+        self.metrics["direct_comparison"].update(direct_comparison_pred, ground_truth)
+        self.metrics["indirect_comparison"].update(indirect_comparison_pred.unsqueeze(1), ground_truth)
 
         # Finally, we return the dictionary of all the metric values.
         return {name: metric for name, metric in self.metrics.items()}
@@ -124,8 +160,8 @@ def main(args: argparse.Namespace) -> dict[str, float]:
         optimizer=torch.optim.Adam(model.parameters()),
         metrics={
             # TODO: Create two binary accuracy metrics using `torchmetrics.Accuracy`:
-            "direct_comparison": ...,
-            "indirect_comparison": ...,
+            "direct_comparison": torchmetrics.Accuracy(task='binary'),
+            "indirect_comparison": torchmetrics.Accuracy(task='binary')
         },
         logdir=npfl138.format_logdir("logs/{file-}{timestamp}{-config}", **vars(args)),
     )

@@ -26,6 +26,14 @@ class Dataset(npfl138.TransformedDataset):
         label = example["label"]  # a torch.Tensor with a single integer representing the label
         return image, label  # return an (input, target) pair
 
+class ResidualBlock(torch.nn.Module):
+    def __init__(self, modules):
+        super().__init__()
+        self.block = torch.nn.Sequential(*modules)
+    
+    def forward(self, x):
+        return x + self.block(x)
+
 
 class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace) -> None:
@@ -64,8 +72,68 @@ class Model(npfl138.TrainableModule):
         # During this first call they also change themselves to the corresponding `torch.nn.Linear` etc.
 
         # TODO: Finally, add the final Linear output layer with `MNIST.LABELS` units.
-        ...
+        super().__init__()
+        cnn_model = []  # torch.nn modules will be appended
 
+        import re
+        layers = re.split(r',(?![^\[]*\])', args.cnn)
+        
+        for spec in layers:
+            if spec.startswith('R-'):
+                inner_modules = [self.parse_layer(s) for s in spec[3:-1].split(',')]
+                cnn_model.append(ResidualBlock(inner_modules))
+            else:
+                cnn_model.append(self.parse_layer(spec))
+
+        cnn_model.append(torch.nn.LazyLinear(MNIST.LABELS))
+        self.model = torch.nn.Sequential(*cnn_model)
+
+    
+    def parse_layer(self, spec) -> torch.nn.Module:
+        if spec == "F":
+            # Do something for Flatten layer
+            return torch.nn.Flatten()
+
+        # These cases would contain '-'
+        spec = spec.split('-')
+        type = spec[0]
+        if type == "C":
+            _, filters, kernel_size, stride, padding = spec
+            return torch.nn.Sequential(
+                    torch.nn.LazyConv2d(int(filters), int(kernel_size), int(stride), padding),
+                    torch.nn.ReLU()
+                )
+
+        elif type == "CB":
+            _, filters, kernel_size, stride, padding = spec
+            return torch.nn.Sequential(
+                    torch.nn.LazyConv2d(int(filters), int(kernel_size), int(stride), padding, bias=False),
+                    torch.nn.LazyBatchNorm2d(),
+                    torch.nn.ReLU()
+                )
+
+        elif type == "M":
+            _, pool_size, stride = spec
+            return torch.nn.Sequential(
+                    torch.nn.MaxPool2d(int(pool_size), int(stride))
+                )
+        
+        elif type == "H":
+            _, hidden_layer_size = spec
+            return torch.nn.Sequential(
+                    torch.nn.LazyLinear(int(hidden_layer_size)),
+                    torch.nn.ReLU()
+                )
+
+        elif type == "D":
+            _, dropout_rate = spec
+            return torch.nn.Dropout2d(float(dropout_rate))
+        else:
+            print("Wrong parameter for --cnn")
+            quit()
+
+    def forward(self, x):
+        return self.model(x)
 
 def main(args: argparse.Namespace) -> dict[str, float]:
     # Set the random seed and the number of threads.
