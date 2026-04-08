@@ -67,7 +67,22 @@ def bboxes_to_rcnn(anchors: torch.Tensor, bboxes: torch.Tensor) -> torch.Tensor:
     the output shape is `[anchors_len, 4]`.
     """
     # TODO: Implement according to the docstring.
-    raise NotImplementedError()
+    anchor_height = anchors[..., BOTTOM] - anchors[..., TOP]
+    anchor_width = anchors[..., RIGHT] - anchors[..., LEFT]
+    anchor_y_center = anchors[..., TOP] + anchor_height / 2
+    anchor_x_center = anchors[..., LEFT] + anchor_width / 2
+
+    bbox_height = bboxes[..., BOTTOM] - bboxes[..., TOP]
+    bbox_width = bboxes[..., RIGHT] - bboxes[..., LEFT]
+    bbox_y_center = bboxes[..., TOP] + bbox_height / 2
+    bbox_x_center = bboxes[..., LEFT] + bbox_width / 2
+
+    t_y = (bbox_y_center - anchor_y_center) / anchor_height
+    t_x = (bbox_x_center - anchor_x_center) / anchor_width
+    t_h = torch.log(bbox_height / anchor_height)
+    t_w = torch.log(bbox_width / anchor_width)
+
+    return torch.stack([t_y, t_x, t_h, t_w], dim=-1)
 
 
 def bboxes_from_rcnn(anchors: torch.Tensor, rcnns: torch.Tensor) -> torch.Tensor:
@@ -77,7 +92,24 @@ def bboxes_from_rcnn(anchors: torch.Tensor, rcnns: torch.Tensor) -> torch.Tensor
     the output shape is `[anchors_len, 4]`.
     """
     # TODO: Implement according to the docstring.
-    raise NotImplementedError()
+    anchor_height = anchors[..., BOTTOM] - anchors[..., TOP]
+    anchor_width = anchors[..., RIGHT] - anchors[..., LEFT]
+    anchor_y_center = anchors[..., TOP] + anchor_height / 2
+    anchor_x_center = anchors[..., LEFT] + anchor_width / 2
+
+    t_y, t_x, t_h, t_w = rcnns[..., 0], rcnns[..., 1], rcnns[..., 2], rcnns[..., 3]
+
+    bbox_y_center = t_y * anchor_height + anchor_y_center
+    bbox_x_center = t_x * anchor_width + anchor_x_center
+    bbox_height = torch.exp(t_h) * anchor_height
+    bbox_width = torch.exp(t_w) * anchor_width
+
+    bbox_top = bbox_y_center - bbox_height / 2
+    bbox_left = bbox_x_center - bbox_width / 2
+    bbox_bottom = bbox_y_center + bbox_height / 2
+    bbox_right = bbox_x_center + bbox_width / 2
+
+    return torch.stack([bbox_top, bbox_left, bbox_bottom, bbox_right], dim=-1)
 
 
 def bboxes_training(
@@ -120,8 +152,49 @@ def bboxes_training(
     # TODO: For each unused anchor, find the gold object with the largest IoU
     # (again the gold object with the smaller index if there are several),
     # and if the IoU is >= threshold, assign the object to the anchor.
+    
+    num_anchors = anchors.shape[0]
+    num_golds = gold_bboxes.shape[0]
 
-    anchor_classes, anchor_bboxes = ..., ...
+    # Initialize assignment arrays
+    anchor_classes = torch.zeros(num_anchors, dtype=gold_classes.dtype)
+    anchor_bboxes = torch.zeros((num_anchors, 4), dtype=torch.float32)
+    anchor_gold_assignment = torch.full((num_anchors,), -1, dtype=torch.long)
+
+    if num_golds > 0:
+        # Compute IoU between all anchors and all gold bboxes
+        # ious shape: [num_anchors, num_golds]
+        ious = bboxes_iou(anchors.unsqueeze(1), gold_bboxes.unsqueeze(0))
+
+        # First, for each gold object, assign it to an anchor with the largest IoU
+        best_anchor_per_gold = ious.argmax(dim=0)
+        
+        # Iterating from 0 to num_golds ensures that smaller index gold objects 
+        # win out if multiple are assigned to the same anchor.
+        for g in range(num_golds):
+            a = best_anchor_per_gold[g]
+            if anchor_gold_assignment[a] == -1:
+                anchor_gold_assignment[a] = g
+
+        # For each unused anchor, find the gold object with the largest IoU
+        best_iou_per_anchor, best_gold_per_anchor = ious.max(dim=1)
+        
+        unused_mask = anchor_gold_assignment == -1
+        threshold_mask = best_iou_per_anchor >= iou_threshold
+        assign_mask = unused_mask & threshold_mask
+        
+        anchor_gold_assignment[assign_mask] = best_gold_per_anchor[assign_mask]
+
+    # Populate output matrices for anchors that have been assigned a gold object
+    assigned_mask = anchor_gold_assignment >= 0
+    if assigned_mask.any():
+        assigned_golds = anchor_gold_assignment[assigned_mask]
+        
+        anchor_classes[assigned_mask] = gold_classes[assigned_golds] + 1
+        
+        assigned_anchors = anchors[assigned_mask]
+        assigned_gold_bboxes = gold_bboxes[assigned_golds]
+        anchor_bboxes[assigned_mask] = bboxes_to_rcnn(assigned_anchors, assigned_gold_bboxes)
 
     return anchor_classes, anchor_bboxes
 
