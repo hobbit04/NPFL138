@@ -45,8 +45,24 @@ class Convolution:
         # manually iterate through the individual pixels, batch examples,
         # input filters, or output filters. However, you can manually
         # iterate through the kernel size.
-        output = ...
 
+        B, H_in, W_in, C_in = inputs.shape
+        H_out = (H_in - self._kernel_size) // self._stride + 1
+        W_out = (W_in - self._kernel_size) // self._stride + 1
+
+        output = torch.zeros((B, H_out, W_out, self._filters))
+
+        for m in range(self._kernel_size):
+            for n in range(self._kernel_size):
+                input_slice = inputs[:, m : m + H_out * self._stride : self._stride, 
+                                        n : n + W_out * self._stride : self._stride, :]
+                
+                output += input_slice @ self._kernel[m, n]
+
+        output += self._bias
+
+        output = torch.relu(output)
+        
         # If requested, verify that `output` contains a correct value.
         if self._verify:
             reference = torch.relu(torch.nn.functional.conv2d(
@@ -65,7 +81,28 @@ class Convolution:
         # - the `inputs` layer,
         # - `self._kernel`,
         # - `self._bias`.
-        inputs_gradient, kernel_gradient, bias_gradient = ..., ..., ...
+
+        delta = outputs_gradient * (outputs > 0).float()
+
+        bias_gradient = torch.sum(delta, dim=(0, 1, 2))
+
+        kernel_gradient = torch.zeros_like(self._kernel)
+        inputs_gradient = torch.zeros_like(inputs)
+        
+        B, H_out, W_out, C_out = delta.shape
+
+        for m in range(self._kernel_size):
+            for n in range(self._kernel_size):
+                input_slice = inputs[:, m : m + H_out * self._stride : self._stride, 
+                                     n : n + W_out * self._stride : self._stride, :]
+            
+                input_flat = input_slice.reshape(-1, input_slice.shape[-1])
+                delta_flat = delta.reshape(-1, C_out)
+                kernel_gradient[m, n] = input_flat.T @ delta_flat
+
+                grad_contribution = delta @ self._kernel[m, n].T
+                inputs_gradient[:, m : m + H_out * self._stride : self._stride, 
+                                n : n + W_out * self._stride : self._stride, :] += grad_contribution
 
         # If requested, verify that the three computed gradients are correct.
         if self._verify:
