@@ -78,10 +78,11 @@ def main(args: argparse.Namespace) -> None:
 
     cags = CAGS(decode_on_demand=False)
 
-    efficientnetv2_b0 = timm.create_model("tf_efficientnetv2_b3.in21k_ft_in1k", pretrained=True, num_classes=0)
+    efficientnetv2_b0 = timm.create_model("tf_efficientnetv2_b3.in21k_ft_in1k", 
+                                            pretrained=True, num_classes=0, drop_path_rate=0.2,)
 
     train_preprocessing = v2.Compose([
-        v2.RandomResizedCrop(224, scale=(0.7, 1.0)),
+        v2.RandomResizedCrop(224, scale=(0.5, 1.0)),
         v2.RandomHorizontalFlip(0.5),
         v2.RandAugment(num_ops=2, magnitude=9),
         v2.ToDtype(torch.float32, scale=True),
@@ -150,7 +151,7 @@ def main(args: argparse.Namespace) -> None:
     
     print("Unfreezed!")
     steps_per_epoch = len(train_loader)
-    epochs_2 = 15
+    epochs_2 = 8
     total_steps_2 = epochs_2 * steps_per_epoch
 
     optimizer_2 = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
