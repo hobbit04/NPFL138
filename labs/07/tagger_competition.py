@@ -14,15 +14,15 @@ from npfl138.datasets.morpho_analyzer import MorphoAnalyzer
 # Also, you can set the number of threads to 0 to use all your CPU cores.
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=10, type=int, help="Batch size.")
-parser.add_argument("--cle_dim", default=32, type=int, help="CLE embedding dimension.")
+parser.add_argument("--cle_dim", default=128, type=int, help="CLE embedding dimension.")
 parser.add_argument("--epochs", default=5, type=int, help="Number of epochs.")
 parser.add_argument("--max_sentences", default=None, type=int, help="Maximum number of sentences to load.")
 parser.add_argument("--recodex", default=False, action="store_true", help="Evaluation in ReCodEx.")
 parser.add_argument("--rnn", default="LSTM", choices=["LSTM", "GRU"], help="RNN layer type.")
-parser.add_argument("--rnn_dim", default=64, type=int, help="RNN layer dimension.")
+parser.add_argument("--rnn_dim", default=512, type=int, help="RNN layer dimension.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
 parser.add_argument("--threads", default=0, type=int, help="Maximum number of threads to use.")
-parser.add_argument("--we_dim", default=64, type=int, help="Word embedding dimension.")
+parser.add_argument("--we_dim", default=128, type=int, help="Word embedding dimension.")
 parser.add_argument("--word_masking", default=0.0, type=float, help="Mask words with the given probability.")
 
 # Use tagger_cle.py class
