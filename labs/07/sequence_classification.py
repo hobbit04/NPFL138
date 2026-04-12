@@ -56,19 +56,37 @@ class Model(npfl138.TrainableModule):
 
         # TODO: The sequence will be processed using an RNN with type `args.rnn` (LSTM/GRU/RNN)
         # and with dimensionality `args.rnn_dim`.
-        ...
-
+        if args.rnn == 'RNN':
+            self.rnn_model = torch.nn.RNN(input_size=args.sequence_dim, hidden_size=args.rnn_dim, batch_first=True)
+        elif args.rnn == 'GRU':
+            self.rnn_model = torch.nn.GRU(input_size=args.sequence_dim, hidden_size=args.rnn_dim, batch_first=True)
+        elif args.rnn == 'LSTM':
+            self.rnn_model = torch.nn.LSTM(input_size=args.sequence_dim, hidden_size=args.rnn_dim, batch_first=True)
+        else:
+            quit(-1)  # ERROR
+   
         # TODO: If `args.hidden_layer` is nonzero, the result of the RNN should be processed
         # by a fully connected layer with `args.hidden_layer` units and ReLU activation.
-        ...
+        if args.hidden_layer > 0:
+            self.hidden = torch.nn.Sequential(
+                torch.nn.LazyLinear(args.hidden_layer),
+                torch.nn.ReLU()
+            )
+        else:
+            self.hidden = torch.nn.Identity()
 
         # TODO: The predictions are generated using a fully connected output layer
         # with one output and sigmoid activation.
-        ...
+        self.fc_layer = torch.nn.Sequential(
+            torch.nn.LazyLinear(1),
+            torch.nn.Sigmoid()
+        )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         # TODO: Process the input sequence through the RNN and the other layers.
-        ...
+        rnn_feature, _ = self.rnn_model(inputs)
+        hidden_layer_result = self.hidden(rnn_feature)
+        return self.fc_layer(hidden_layer_result)
 
 
 def main(args: argparse.Namespace) -> dict[str, float]:
@@ -95,7 +113,7 @@ def main(args: argparse.Namespace) -> dict[str, float]:
         def gradient_clipping(optimizer, _args, _kwargs):
             # TODO: Implement gradient clipping using `torch.nn.utils.clip_grad_norm_`,
             # clipping the gradient if its L2 norm is larger than `args.clip_gradient`.
-            ...
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_gradient)
         optimizer.register_step_pre_hook(gradient_clipping)
 
     model.configure(
