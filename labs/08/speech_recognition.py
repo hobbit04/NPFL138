@@ -17,7 +17,7 @@ parser.add_argument("--epochs", default=100, type=int, help="Number of epochs.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
 parser.add_argument("--threads", default=0, type=int, help="Maximum number of threads to use.")
 
-parser.add_argument("--rnn_dim", default=128, type=int)
+parser.add_argument("--rnn_dim", default=256, type=int)
 
 class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace, train: CommonVoiceCs.Dataset) -> None:
@@ -26,7 +26,8 @@ class Model(npfl138.TrainableModule):
         self.rnn = torch.nn.GRU(
             input_size=CommonVoiceCs.MFCC_DIM,
             hidden_size=args.rnn_dim,
-            num_layers=2,
+            num_layers=3,
+            dropout=0.2,
             batch_first=True,
             bidirectional=True,
         )
@@ -97,8 +98,8 @@ class Model(npfl138.TrainableModule):
     def predict_step(self, xs, as_numpy=True):
         with torch.no_grad():
             # Perform constrained decoding.
-            yield from self.ctc_decoding(self.forward(*xs), *xs)
-
+            features, feature_lens = xs
+            yield from self.ctc_decoding(self.forward(features, feature_lens), feature_lens)
 
 class TrainableDataset(npfl138.TransformedDataset):
     def transform(self, example):
