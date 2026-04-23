@@ -54,7 +54,8 @@ class Model(npfl138.TrainableModule):
         super().__init__()
         # Construct the required layers.
 
-        # TODO: The sequence will be processed using an RNN with type `args.rnn` (LSTM/GRU/RNN)
+        # TODO: The sequence should be processed using an RNN with type `args.rnn` (values
+        # "LSTM", "GRU", "RNN" corresponding to `torch.nn.LSTM`, `torch.nn.GRU`, `torch.nn.RNN`),
         # and with dimensionality `args.rnn_dim`.
         if args.rnn == 'RNN':
             self.rnn_model = torch.nn.RNN(input_size=args.sequence_dim, hidden_size=args.rnn_dim, batch_first=True)

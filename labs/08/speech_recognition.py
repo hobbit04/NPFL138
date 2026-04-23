@@ -95,7 +95,7 @@ class Model(npfl138.TrainableModule):
             
         return self.metrics
 
-    def predict_step(self, xs, as_numpy=True):
+    def predict_step(self, xs):
         with torch.no_grad():
             # Perform constrained decoding.
             features, feature_lens = xs
