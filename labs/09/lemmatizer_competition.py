@@ -14,12 +14,15 @@ from itertools import chain
 # TODO: Define reasonable defaults and optionally more parameters.
 # Also, you can set the number of threads to 0 to use all your CPU cores.
 parser = argparse.ArgumentParser()
-parser.add_argument("--batch_size", default=10, type=int, help="Batch size.")
-parser.add_argument("--cle_dim", default=64, type=int, help="CLE embedding dimension.")
-parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
+parser.add_argument("--batch_size", default=64, type=int, help="Batch size.")
+parser.add_argument("--beam_width", default=4, type=int, help="Beam search width (1 = greedy).")
+parser.add_argument("--cle_dim", default=256, type=int, help="CLE embedding dimension.")
+parser.add_argument("--dropout", default=0.3, type=float, help="Dropout rate.")
+parser.add_argument("--encoder_layers", default=2, type=int, help="Number of encoder GRU layers.")
+parser.add_argument("--epochs", default=20, type=int, help="Number of epochs.")
 parser.add_argument("--max_sentences", default=None, type=int, help="Maximum number of sentences to load.")
 parser.add_argument("--recodex", default=False, action="store_true", help="Evaluation in ReCodEx.")
-parser.add_argument("--rnn_dim", default=64, type=int, help="RNN layer dimension.")
+parser.add_argument("--rnn_dim", default=256, type=int, help="RNN layer dimension.")
 parser.add_argument("--seed", default=41, type=int, help="Random seed.")
 parser.add_argument("--show_results_every_batch", default=1000, type=int, help="Show results every given batch.")
 parser.add_argument("--tie_embeddings", default=True, action="store_true", help="Tie target embeddings.")
@@ -92,20 +95,34 @@ class Model(npfl138.TrainableModule):
         # - `self._source_embedding` as an embedding layer of source characters into `args.cle_dim` dimensions
         # - `self._source_rnn` as a bidirectional GRU with `args.rnn_dim` units processing embedded source chars
         self._source_embedding = torch.nn.Embedding(len(self._source_vocab), args.cle_dim)
-        self._source_rnn = torch.nn.GRU(args.cle_dim, args.rnn_dim, bidirectional=True)
-        
+        self._embedding_dropout = torch.nn.Dropout(args.dropout)
+        # Multi-layer bidirectional GRU encoder with dropout between layers
+        self._source_rnn = torch.nn.GRU(
+            args.cle_dim, args.rnn_dim,
+            num_layers=args.encoder_layers,
+            bidirectional=True,
+            dropout=args.dropout if args.encoder_layers > 1 else 0.0,
+            batch_first=True,
+        )
+        # Batch norm on encoder output to stabilize training
+        self._encoder_bn = torch.nn.BatchNorm1d(args.rnn_dim)
+        self._encoder_dropout = torch.nn.Dropout(args.dropout)
+
         # TODO: Define
         # - `self._target_rnn_cell` as a `WithAttention` with `attention_dim=args.rnn_dim`, employing as the
         #   underlying cell the `torch.nn.GRUCell` with `args.rnn_dim`. The cell will process concatenated
         #   target character embeddings and the result of the attention mechanism.
         self._target_rnn_cell = WithAttention(
-            torch.nn.GRUCell(args.cle_dim + args.rnn_dim, args.rnn_dim), 
+            torch.nn.GRUCell(args.cle_dim + args.rnn_dim, args.rnn_dim),
             attention_dim=args.rnn_dim
         )
+        self._decoder_dropout = torch.nn.Dropout(args.dropout)
 
         # TODO(lemmatizer_noattn): Then define
         # - `self._target_output_layer` as a linear layer into as many outputs as there are unique target chars
         self._target_output_layer = torch.nn.Linear(args.rnn_dim, len(self._target_vocab))
+
+        self._beam_width = args.beam_width
 
         if not args.tie_embeddings:
             # TODO(lemmatizer_noattn): Define the `self._target_embedding` as an embedding layer of the target
@@ -133,7 +150,7 @@ class Model(npfl138.TrainableModule):
 
     def encoder(self, words: torch.Tensor) -> torch.Tensor:
         # TODO(lemmatizer_noattn): Embed the inputs using `self._source_embedding`.
-        embedded = self._source_embedding(words)
+        embedded = self._embedding_dropout(self._source_embedding(words))
         # TODO: Run the `self._source_rnn` on the embedded sequences, correctly handling
         # padding. Newly, the result should be encoding of every sequence element,
         # summing results in the opposite directions.
@@ -144,8 +161,12 @@ class Model(npfl138.TrainableModule):
         output, hidden = self._source_rnn(packed)
         output, _ = torch.nn.utils.rnn.pad_packed_sequence(output, batch_first=True)
         forward_out, backward_out = output.chunk(2, dim=-1)
+        summed = forward_out + backward_out
 
-        return forward_out + backward_out
+        # Apply batch norm (requires [N, C, L] → normalize over C=rnn_dim) then dropout
+        summed = self._encoder_bn(summed.transpose(1, 2)).transpose(1, 2)
+        summed = self._encoder_dropout(summed)
+        return summed
 
     def decoder_training(self, encoded: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         # TODO(lemmatizer_noattn): Generate inputs for the decoder, which are obtained from `targets` by
@@ -175,7 +196,7 @@ class Model(npfl138.TrainableModule):
         outputs = []
         for token in torch.unbind(inputs_embedded, dim=1):
             state = self._target_rnn_cell.forward(token, state)
-            outputs.append(state)
+            outputs.append(self._decoder_dropout(state))
         outputs = torch.stack(outputs, dim=1)
         logits = self._target_output_layer(outputs)
         logits = logits.permute(0, 2, 1)
@@ -195,39 +216,110 @@ class Model(npfl138.TrainableModule):
         # - `states`: initial RNN state from the encoder, i.e., `encoded[:, 0]`.
         # - `results`: an empty list, where generated outputs will be stored;
         # - `result_lengths`: a tensor of shape `[batch_size]` filled with `max_length`,
-        index = 0
-        inputs = torch.full((batch_size,), MorphoDataset.BOW, device=encoded.device)
-        states = encoded[:, 0]
-        results = []
-        result_lengths = torch.full((batch_size,), max_length, device=encoded.device )
 
-        while index < max_length and torch.any(result_lengths == max_length):
-            # TODO(lemmatizer_noattn):
-            # - First embed the `inputs` using the `self._target_embedding` layer.
-            # - Then call `self._target_rnn_cell` using two arguments, the embedded `inputs`
-            #   and the current `states`. The call returns a single tensor, which you should
-            #   store as both a new `hidden` and a new `states`.
-            # - Pass the outputs through the `self._target_output_layer`.
-            # - Generate the most probable prediction for every batch example.
-            embedded = self._target_embedding(inputs)
-            hidden = states = self._target_rnn_cell(embedded, states)
-            outputs = self._target_output_layer(hidden)
+        if self._beam_width <= 1:
+            # Greedy decoding (original behavior)
+            index = 0
+            inputs = torch.full((batch_size,), MorphoDataset.BOW, device=encoded.device)
+            states = encoded[:, 0]
+            results = []
+            result_lengths = torch.full((batch_size,), max_length, device=encoded.device)
 
-            predictions = outputs.argmax(dim=-1)
+            while index < max_length and torch.any(result_lengths == max_length):
+                # TODO(lemmatizer_noattn):
+                # - First embed the `inputs` using the `self._target_embedding` layer.
+                # - Then call `self._target_rnn_cell` using two arguments, the embedded `inputs`
+                #   and the current `states`. The call returns a single tensor, which you should
+                #   store as both a new `hidden` and a new `states`.
+                # - Pass the outputs through the `self._target_output_layer`.
+                # - Generate the most probable prediction for every batch example.
+                embedded = self._target_embedding(inputs)
+                hidden = states = self._target_rnn_cell(embedded, states)
+                outputs = self._target_output_layer(hidden)
 
-            # Store the predictions in the `results` and update the `result_lengths`
-            # by setting it to current `index` if an EOW was generated for the first time.
-            results.append(predictions)
-            result_lengths[(predictions == MorphoDataset.EOW) & (result_lengths > index)] = index + 1
+                predictions = outputs.argmax(dim=-1)
 
-            # TODO(lemmatizer_noattn): Finally,
-            # - set `inputs` to the `predictions`,
-            # - increment the `index` by one.
-            inputs = predictions
-            index = index + 1
+                # Store the predictions in the `results` and update the `result_lengths`
+                # by setting it to current `index` if an EOW was generated for the first time.
+                results.append(predictions)
+                result_lengths[(predictions == MorphoDataset.EOW) & (result_lengths > index)] = index + 1
 
-        results = torch.stack(results, dim=1)
-        return results
+                # TODO(lemmatizer_noattn): Finally,
+                # - set `inputs` to the `predictions`,
+                # - increment the `index` by one.
+                inputs = predictions
+                index = index + 1
+
+            results = torch.stack(results, dim=1)
+            return results
+
+        # Beam search decoding: for each example in the batch, maintain `beam_width` hypotheses.
+        # Shapes after expansion: [batch_size * beam_width, ...]
+        B, W = batch_size, self._beam_width
+        device = encoded.device
+
+        # Expand encoder memory for beam_width copies of each example
+        # encoded: [B, seq, rnn_dim] → [B*W, seq, rnn_dim]
+        encoded_exp = encoded.unsqueeze(1).expand(-1, W, -1, -1).reshape(B * W, -1, encoded.shape[-1])
+        self._target_rnn_cell.setup_memory(encoded_exp)
+
+        states = encoded_exp[:, 0]                                    # [B*W, rnn_dim]
+        inputs = torch.full((B * W,), MorphoDataset.BOW, device=device)  # [B*W]
+
+        # Log-prob scores for each beam: first beam gets 0, others get -inf so only one starts
+        scores = torch.full((B, W), float("-inf"), device=device)
+        scores[:, 0] = 0.0                                            # [B, W]
+
+        # Token sequences for each beam
+        sequences = torch.full((B, W, max_length), MorphoDataset.PAD, dtype=torch.long, device=device)
+        # Track whether each beam has emitted EOW
+        finished = torch.zeros(B, W, dtype=torch.bool, device=device)
+
+        for index in range(max_length):
+            embedded = self._target_embedding(inputs)                 # [B*W, cle_dim]
+            states = self._target_rnn_cell(embedded, states)          # [B*W, rnn_dim]
+            logits = self._target_output_layer(states)                # [B*W, vocab]
+            log_probs = torch.nn.functional.log_softmax(logits, dim=-1)  # [B*W, vocab]
+            vocab_size = log_probs.shape[-1]
+
+            # Reshape to [B, W, vocab] and add current beam scores
+            log_probs = log_probs.view(B, W, vocab_size)
+            # Finished beams should not expand further; pin them with a large penalty on all but PAD
+            if index > 0:
+                log_probs[finished] = float("-inf")
+                log_probs[finished, MorphoDataset.EOW] = 0.0
+
+            candidate_scores = scores.unsqueeze(-1) + log_probs      # [B, W, vocab]
+            candidate_scores = candidate_scores.view(B, W * vocab_size)
+
+            # Pick top-W candidates per example
+            top_scores, top_indices = candidate_scores.topk(W, dim=-1)  # [B, W]
+            beam_indices = top_indices // vocab_size                  # which beam they came from
+            token_indices = top_indices % vocab_size                  # which token was chosen
+
+            # Reorder states to match new beam assignment
+            # beam_indices: [B, W] → flat indices into [B*W]
+            flat_beam = (torch.arange(B, device=device).unsqueeze(1) * W + beam_indices).view(B * W)
+            states = states[flat_beam]
+
+            # Also reorder past sequences
+            sequences = sequences[torch.arange(B, device=device).unsqueeze(1) * W + beam_indices]
+            sequences[:, :, index] = token_indices                    # store new tokens
+
+            # Update finished flags and scores
+            finished = finished[torch.arange(B, device=device).unsqueeze(1) * W + beam_indices]
+            finished = finished | (token_indices == MorphoDataset.EOW)
+            scores = top_scores
+
+            # Prepare next inputs
+            inputs = token_indices.view(B * W)
+
+            if finished.all():
+                break
+
+        # Return the best beam (beam 0 after topk is sorted descending)
+        best = sequences[:, 0, :]   # [B, max_length]
+        return best
 
     def compute_metrics(self, y_pred, y, *xs):
         if self.training:  # In training regime, convert logits to most likely predictions.
@@ -239,7 +331,18 @@ class Model(npfl138.TrainableModule):
         return self.metrics  # Report all metrics.
 
     def train_step(self, xs, y):
-        result = super().train_step(xs, y)
+        # Override to insert gradient clipping between backward() and optimizer.step()
+        y_pred = self(*xs)
+        loss = self.track_loss(self.compute_loss(y_pred, y, *xs))
+        loss.backward()
+        with torch.no_grad():
+            # Gradient clipping prevents exploding gradients in the RNN
+            torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+            self.scheduler is not None and self.scheduler.step()
+            metrics = self.compute_metrics(y_pred, y, *xs)
+            result = {**({"lr": self.scheduler.get_last_lr()[0]} if self.scheduler else {}), **self.losses, **metrics}
 
         self._batches += 1
         if self._show_results_every_batch and self._batches % self._show_results_every_batch == 0:
@@ -343,9 +446,14 @@ def main(args: argparse.Namespace) -> None:
     # TODO: Create the model and train it.
     model = Model(args, morpho.train)
 
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-3)
+    # Cosine annealing decays lr from initial to near-zero over all training steps
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.epochs * len(train), eta_min=1e-5
+    )
     model.configure(
         # TODO: Create the Adam optimizer.
-        optimizer=torch.optim.Adam(params=model.parameters()),
+        optimizer=optimizer,
         # TODO: Use the usual `torch.nn.CrossEntropyLoss` loss function. Additionally,
         # pass `ignore_index=morpho.PAD` to the constructor so that the padded
         # tags are ignored during the loss computation.
@@ -354,6 +462,8 @@ def main(args: argparse.Namespace) -> None:
         # collect lemmatization accuracy.
         metrics={"accuracy": torchmetrics.MeanMetric()},
         logdir=npfl138.format_logdir("logs/{file-}{timestamp}{-config}", **vars(args)),
+        # Cosine scheduler stepped every batch by the framework (scheduler= not lr_scheduler=)
+        scheduler=scheduler,
     )
     logs = model.fit(train, dev=dev, epochs=args.epochs)
 
