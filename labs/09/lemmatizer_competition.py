@@ -271,10 +271,11 @@ class Model(npfl138.TrainableModule):
         scores = torch.full((B, W), float("-inf"), device=device)
         scores[:, 0] = 0.0                                            # [B, W]
 
-        # Token sequences for each beam
-        sequences = torch.full((B, W, max_length), MorphoDataset.PAD, dtype=torch.long, device=device)
+        # Token sequences and finished flags stored flat as [B*W, ...] to allow
+        # straightforward reordering via flat_beam indices
+        sequences = torch.full((B * W, max_length), MorphoDataset.PAD, dtype=torch.long, device=device)
         # Track whether each beam has emitted EOW
-        finished = torch.zeros(B, W, dtype=torch.bool, device=device)
+        finished = torch.zeros(B * W, dtype=torch.bool, device=device)
 
         for index in range(max_length):
             embedded = self._target_embedding(inputs)                 # [B*W, cle_dim]
@@ -285,10 +286,11 @@ class Model(npfl138.TrainableModule):
 
             # Reshape to [B, W, vocab] and add current beam scores
             log_probs = log_probs.view(B, W, vocab_size)
-            # Finished beams should not expand further; pin them with a large penalty on all but PAD
+            # Finished beams should not expand further; pin them with a large penalty on all but EOW
             if index > 0:
-                log_probs[finished] = float("-inf")
-                log_probs[finished, MorphoDataset.EOW] = 0.0
+                finished_2d = finished.view(B, W)
+                log_probs[finished_2d] = float("-inf")
+                log_probs[finished_2d, MorphoDataset.EOW] = 0.0
 
             candidate_scores = scores.unsqueeze(-1) + log_probs      # [B, W, vocab]
             candidate_scores = candidate_scores.view(B, W * vocab_size)
@@ -298,18 +300,18 @@ class Model(npfl138.TrainableModule):
             beam_indices = top_indices // vocab_size                  # which beam they came from
             token_indices = top_indices % vocab_size                  # which token was chosen
 
-            # Reorder states to match new beam assignment
-            # beam_indices: [B, W] → flat indices into [B*W]
+            # Reorder states, sequences, and finished to match new beam assignment.
+            # flat_beam: [B*W] — indices into the B*W dimension
             flat_beam = (torch.arange(B, device=device).unsqueeze(1) * W + beam_indices).view(B * W)
             states = states[flat_beam]
 
-            # Also reorder past sequences
-            sequences = sequences[torch.arange(B, device=device).unsqueeze(1) * W + beam_indices]
-            sequences[:, :, index] = token_indices                    # store new tokens
+            # sequences and finished are [B*W, ...], so flat_beam indexes them directly
+            sequences = sequences[flat_beam]
+            sequences[:, index] = token_indices.view(B * W)           # store new tokens
 
             # Update finished flags and scores
-            finished = finished[torch.arange(B, device=device).unsqueeze(1) * W + beam_indices]
-            finished = finished | (token_indices == MorphoDataset.EOW)
+            finished = finished[flat_beam]
+            finished = finished | (token_indices.view(B * W) == MorphoDataset.EOW)
             scores = top_scores
 
             # Prepare next inputs
@@ -318,8 +320,9 @@ class Model(npfl138.TrainableModule):
             if finished.all():
                 break
 
-        # Return the best beam (beam 0 after topk is sorted descending)
-        best = sequences[:, 0, :]   # [B, max_length]
+        # Return the best beam (beam 0 after topk is sorted descending).
+        # sequences is [B*W, max_length]; beam 0 for example i is at row i*W
+        best = sequences[torch.arange(B, device=device) * W]          # [B, max_length]
         return best
 
     def compute_metrics(self, y_pred, y, *xs):
