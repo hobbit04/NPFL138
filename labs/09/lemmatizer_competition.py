@@ -15,6 +15,7 @@ from itertools import chain
 # Also, you can set the number of threads to 0 to use all your CPU cores.
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=64, type=int, help="Batch size.")
+parser.add_argument("--device", default="cuda", type=str, help="Device to use (cuda/cpu/auto).")
 parser.add_argument("--beam_width", default=4, type=int, help="Beam search width (1 = greedy).")
 parser.add_argument("--cle_dim", default=256, type=int, help="CLE embedding dimension.")
 parser.add_argument("--dropout", default=0.3, type=float, help="Dropout rate.")
@@ -464,6 +465,7 @@ def main(args: argparse.Namespace) -> None:
         logdir=npfl138.format_logdir("logs/{file-}{timestamp}{-config}", **vars(args)),
         # Cosine scheduler stepped every batch by the framework (scheduler= not lr_scheduler=)
         scheduler=scheduler,
+        device=args.device,
     )
     logs = model.fit(train, dev=dev, epochs=args.epochs)
 
