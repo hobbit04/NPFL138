@@ -105,8 +105,8 @@ class Model(npfl138.TrainableModule):
             dropout=args.dropout if args.encoder_layers > 1 else 0.0,
             batch_first=True,
         )
-        # Batch norm on encoder output to stabilize training
-        self._encoder_bn = torch.nn.BatchNorm1d(args.rnn_dim)
+        # Layer norm on encoder output to stabilize training (works for any batch/sequence size)
+        self._encoder_ln = torch.nn.LayerNorm(args.rnn_dim)
         self._encoder_dropout = torch.nn.Dropout(args.dropout)
 
         # TODO: Define
@@ -164,8 +164,8 @@ class Model(npfl138.TrainableModule):
         forward_out, backward_out = output.chunk(2, dim=-1)
         summed = forward_out + backward_out
 
-        # Apply batch norm (requires [N, C, L] → normalize over C=rnn_dim) then dropout
-        summed = self._encoder_bn(summed.transpose(1, 2)).transpose(1, 2)
+        # Apply layer norm (normalizes over last dim=rnn_dim) then dropout
+        summed = self._encoder_ln(summed)
         summed = self._encoder_dropout(summed)
         return summed
 
