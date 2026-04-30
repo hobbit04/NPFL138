@@ -242,11 +242,10 @@ def main(args: argparse.Namespace) -> None:
 
     model.configure(optimizer=optimizer, scheduler=scheduler, logdir=logdir)
 
-    for epoch in range(args.epochs):
-        model.fit(train_loader, epochs=1)
-        dev_preds = predict_answers(model, dev_ds, args.n_best, args.max_answer_len)
-        acc = ReadingComprehensionDataset.evaluate(dataset.dev, dev_preds)
-        print(f"Epoch {model.epoch} dev accuracy: {100 * acc:.2f}%")
+    model.fit(train_loader, epochs=args.epochs)
+    dev_preds = predict_answers(model, dev_ds, args.n_best, args.max_answer_len)
+    acc = ReadingComprehensionDataset.evaluate(dataset.dev, dev_preds)
+    print(f"Epoch {model.epoch} dev accuracy: {100 * acc:.2f}%")
 
     os.makedirs(logdir, exist_ok=True)
     test_preds = predict_answers(model, test_ds, args.n_best, args.max_answer_len)
