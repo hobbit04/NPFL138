@@ -171,9 +171,10 @@ def main(args: argparse.Namespace) -> None:
 
     # Load the data
     dataset = ReadingComprehensionDataset()
-    train = TrainableDataset(flatten(dataset.train), tokenizer, training=True).dataloader(batch_size=args.batch_size, shuffle=True)
-    dev   = TrainableDataset(flatten(dataset.dev),   tokenizer, training=False).dataloader(batch_size=args.batch_size)
-    test  = TrainableDataset(flatten(dataset.test),  tokenizer, training=False).dataloader(batch_size=args.batch_size)
+    train     = TrainableDataset(flatten(dataset.train), tokenizer, training=True).dataloader(batch_size=args.batch_size, shuffle=True)
+    dev_train = TrainableDataset(flatten(dataset.dev),   tokenizer, training=True).dataloader(batch_size=args.batch_size)
+    dev       = TrainableDataset(flatten(dataset.dev),   tokenizer, training=False).dataloader(batch_size=args.batch_size)
+    test      = TrainableDataset(flatten(dataset.test),  tokenizer, training=False).dataloader(batch_size=args.batch_size)
 
     # train_paragraphs = dataset.train.paragraphs
     # for i in range(2):
@@ -196,7 +197,7 @@ def main(args: argparse.Namespace) -> None:
         optimizer=torch.optim.AdamW(model.parameters(), lr=2e-5, weight_decay=0.01),
         logdir=logdir,
     )
-    model.fit(train, dev=dev, epochs=args.epochs)
+    model.fit(train, dev=dev_train, epochs=args.epochs)
 
     # Generate test set annotations, but in `logdir` to allow parallel execution.
     os.makedirs(logdir, exist_ok=True)
