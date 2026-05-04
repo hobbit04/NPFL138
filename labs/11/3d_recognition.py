@@ -15,16 +15,16 @@ import torch.nn.functional as F
 # TODO: Define reasonable defaults and optionally more parameters.
 # Also, you can set the number of threads to 0 to use all your CPU cores.
 parser = argparse.ArgumentParser()
-parser.add_argument("--batch_size", default=64, type=int, help="Batch size.")
-parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
-parser.add_argument("--modelnet", default=20, type=int, help="ModelNet dimension.")
+parser.add_argument("--batch_size", default=32, type=int, help="Batch size.")
+parser.add_argument("--epochs", default=40, type=int, help="Number of epochs.")
+parser.add_argument("--modelnet", default=32, type=int, help="ModelNet dimension.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
 parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
 
 class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace, train: ModelNet.Dataset) -> None:
         super().__init__()
-        self.backbone = timm.create_model('resnet18', pretrained=True, num_classes=0, in_chans=3)
+        self.backbone = timm.create_model('convnext_large.fb_in22k_ft_in1k', pretrained=True, num_classes=0, in_chans=3)
         self.classifier = torch.nn.Linear(self.backbone.num_features, 10)
 
     def forward(self, x):
