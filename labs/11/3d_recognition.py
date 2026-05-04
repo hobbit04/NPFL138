@@ -16,10 +16,10 @@ import torch.nn.functional as F
 # Also, you can set the number of threads to 0 to use all your CPU cores.
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=32, type=int, help="Batch size.")
-parser.add_argument("--epochs", default=40, type=int, help="Number of epochs.")
+parser.add_argument("--epochs", default=20, type=int, help="Number of epochs.")
 parser.add_argument("--modelnet", default=32, type=int, help="ModelNet dimension.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
-parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
+parser.add_argument("--threads", default=0, type=int, help="Maximum number of threads to use.")
 
 class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace, train: ModelNet.Dataset) -> None:
@@ -80,9 +80,9 @@ def main(args: argparse.Namespace) -> None:
     test = TrainableDataset(modelnet.test, False).dataloader(batch_size=args.batch_size)
 
     model = Model(args, train=train)
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=args.epochs * len(train), eta_min=1e-5
+        optimizer, T_max=args.epochs * len(train), eta_min=1e-6
     )
     model.configure(
         optimizer=optimizer,
