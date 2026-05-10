@@ -15,9 +15,11 @@ parser.add_argument("--render_each", default=0, type=int, help="Render some epis
 parser.add_argument("--seed", default=None, type=int, help="Random seed.")
 parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
 # For these and any other arguments you add, ReCodEx will keep your default value.
-parser.add_argument("--batch_size", default=..., type=int, help="Batch size.")
-parser.add_argument("--episodes", default=..., type=int, help="Training episodes.")
-parser.add_argument("--hidden_layer_size", default=..., type=int, help="Size of hidden layer.")
+parser.add_argument("--batch_size", default=5, type=int, help="Batch size.")
+parser.add_argument("--episodes", default=200, type=int, help="Training episodes.")
+parser.add_argument("--gamma", default=0.99, type=float, help="Discounting factor.")
+parser.add_argument("--hidden_layer_size", default=128, type=int, help="Size of hidden layer.")
+parser.add_argument("--learning_rate", default=0.01, type=float, help="Learning rate.")
 
 
 class Agent:
@@ -34,7 +36,26 @@ class Agent:
         # a single output with no activation.
         #
         # Using Adam optimizer for both models is a good default.
-        raise NotImplementedError()
+        input_size = env.observation_space.shape[0]
+
+        self._policy = torch.nn.Sequential(
+            torch.nn.Linear(input_size, args.hidden_layer_size),
+            torch.nn.ReLU(),
+            torch.nn.Linear(args.hidden_layer_size, env.action_space.n),
+            torch.nn.Softmax(dim=-1),
+        ).to(self.device)
+
+        self._baseline = torch.nn.Sequential(
+            torch.nn.Linear(input_size, args.hidden_layer_size),
+            torch.nn.ReLU(),
+            torch.nn.Linear(args.hidden_layer_size, 1),
+        ).to(self.device)
+
+        self._policy_optimizer = torch.optim.Adam(self._policy.parameters(), lr=args.learning_rate)
+        self._baseline_optimizer = torch.optim.Adam(self._baseline.parameters(), lr=args.learning_rate)
+
+        self._policy_loss = torch.nn.NLLLoss(reduction="none")
+        self._baseline_loss = torch.nn.MSELoss()
 
     # The `npfl138.rl_utils.typed_torch_function` automatically converts input arguments
     # to PyTorch tensors of given type, and converts the result to a NumPy array.
@@ -50,12 +71,32 @@ class Agent:
         # Note that predicting returns in 0-500 range is challenging for the network, given
         # that the default initialization tries to keep variance -- it might be helpful for
         # the network if you predict returns in a smaller range.
-        raise NotImplementedError()
+        baseline = self._baseline(states).squeeze(-1)
+        advantage = returns - baseline.detach()
+        # Normalize advantages to reduce variance
+        advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
+
+        self._policy_optimizer.zero_grad()
+        probs = self._policy(states)
+        log_probs = torch.log(probs + 1e-8)
+        per_sample_loss = self._policy_loss(log_probs, actions)
+        # Entropy bonus to encourage exploration
+        entropy = -(probs * log_probs).sum(dim=-1).mean()
+        policy_loss = (per_sample_loss * advantage).mean() - 0.01 * entropy
+        policy_loss.backward()
+        self._policy_optimizer.step()
+
+        self._baseline_optimizer.zero_grad()
+        baseline = self._baseline(states).squeeze(-1)
+        baseline_loss = self._baseline_loss(baseline, returns)
+        baseline_loss.backward()
+        self._baseline_optimizer.step()
 
     @npfl138.rl_utils.typed_torch_function(device, torch.float32)
     def predict(self, states: torch.Tensor) -> np.ndarray:
         # TODO(reinforce): Define the prediction method returning policy probabilities.
-        raise NotImplementedError()
+        with torch.no_grad():
+            return self._policy(states)
 
 
 def main(env: npfl138.rl_utils.EvaluationEnv, args: argparse.Namespace) -> None:
@@ -77,7 +118,8 @@ def main(env: npfl138.rl_utils.EvaluationEnv, args: argparse.Namespace) -> None:
                 # TODO(reinforce): Choose `action` according to probabilities
                 # distribution (see `np.random.choice`), which you
                 # can compute using `agent.predict` and current `state`.
-                action = ...
+                probs = agent.predict(state)
+                action = np.random.choice(len(probs), p=probs)
 
                 next_state, reward, terminated, truncated, _ = env.step(action)
                 done = terminated or truncated
@@ -89,20 +131,27 @@ def main(env: npfl138.rl_utils.EvaluationEnv, args: argparse.Namespace) -> None:
                 state = next_state
 
             # TODO(reinforce): Compute returns by summing rewards.
-            ...
+            returns = []
+            G = 0
+            for reward in reversed(rewards):
+                G = reward + args.gamma * G
+                returns.insert(0, G)
 
             # TODO(reinforce): Append states, actions and returns to the training batch.
-            ...
+            batch_states += states
+            batch_actions += actions
+            batch_returns += returns
 
         # TODO(reinforce): Train using the generated batch.
-        ...
+        agent.train(batch_states, batch_actions, batch_returns)
 
     # Final evaluation
     while True:
         state, done = env.reset(start_evaluation=True)[0], False
         while not done:
             # TODO(reinforce): Choose a greedy action.
-            action = ...
+            probs = agent.predict(state)
+            action = np.argmax(probs)
             state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
 

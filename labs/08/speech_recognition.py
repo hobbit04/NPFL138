@@ -19,6 +19,22 @@ parser.add_argument("--threads", default=0, type=int, help="Maximum number of th
 
 parser.add_argument("--rnn_dim", default=256, type=int)
 
+class Dataset(npfl138.TransformedDataset):
+    def transform(self, example):
+        # TODO: Prepare a single example. The structure of the inputs then has to be reflected
+        # in the `forward`, `compute_loss`, and `compute_metrics` methods; right now, there are
+        # just `...` instead of the input arguments in the definition of the mentioned methods.
+        #
+        # You can use `CommonVoiceCs.LETTER_NAMES : list[str]` or `CommonVoiceCs.LETTERS_VOCAB : npfl138.Vocabulary`
+        # to convert between letters and their indices. While the letters do not explicitly contain
+        # a blank token, the [PAD] token can be employed as one.
+        raise NotImplementedError()
+
+    def collate(self, batch):
+        # TODO: Construct a single batch from a list of individual examples.
+        raise NotImplementedError()
+
+
 class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace, train: CommonVoiceCs.Dataset) -> None:
         super().__init__()
@@ -101,6 +117,7 @@ class Model(npfl138.TrainableModule):
             features, feature_lens = xs
             yield from self.ctc_decoding(self.forward(features, feature_lens), feature_lens)
 
+<<<<<<< HEAD
 class TrainableDataset(npfl138.TransformedDataset):
     def transform(self, example):
         # TODO: Prepare a single example. The structure of the inputs then has to be reflected
@@ -136,6 +153,8 @@ class TrainableDataset(npfl138.TransformedDataset):
 
         return (features, feature_lens), (labels, label_lens)
     
+=======
+>>>>>>> upstream/master
 def main(args: argparse.Namespace) -> None:
     # Set the random seed and the number of threads.
     npfl138.startup(args.seed, args.threads)
@@ -147,9 +166,9 @@ def main(args: argparse.Namespace) -> None:
     # Load the data.
     common_voice = CommonVoiceCs()
 
-    train = TrainableDataset(common_voice.train).dataloader(args.batch_size, shuffle=True)
-    dev = TrainableDataset(common_voice.dev).dataloader(args.batch_size)
-    test = TrainableDataset(common_voice.test).dataloader(args.batch_size)
+    train = Dataset(common_voice.train).dataloader(args.batch_size, shuffle=True)
+    dev = Dataset(common_voice.dev).dataloader(args.batch_size)
+    test = Dataset(common_voice.test).dataloader(args.batch_size)
 
     # TODO: Create the model and train it. The `Model.compute_metrics` method assumes you
     # passed the following metric to the `configure` method under the name "edit_distance":
@@ -165,7 +184,7 @@ def main(args: argparse.Namespace) -> None:
     logs = model.fit(train, dev=dev, epochs=args.epochs)
 
 
-    # Generate test set annotations, but in `model.logdir` to allow parallel execution.
+    # Generate test set annotations, but in `logdir` to allow parallel execution.
     os.makedirs(logdir, exist_ok=True)
     with open(os.path.join(logdir, "speech_recognition.txt"), "w", encoding="utf-8") as predictions_file:
         # TODO: Predict the CommonVoice sentences.

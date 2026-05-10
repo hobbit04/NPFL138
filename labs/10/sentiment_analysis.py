@@ -20,8 +20,26 @@ parser.add_argument("--batch_size", default=16, type=int, help="Batch size.")
 parser.add_argument("--epochs", default=5, type=int, help="Number of epochs.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
 parser.add_argument("--threads", default=1, type=int, help="Maximum number of threads to use.")
+<<<<<<< HEAD
 parser.add_argument("--dropout", default=0.3, type=float, help="Probability of dropout layer")
 parser.add_argument("--learning_rate", default=2e-5, type=float, help="Learning rate")
+=======
+
+
+class Dataset(npfl138.TransformedDataset):
+    def __init__(self, dataset: TextClassificationDataset.Dataset, *MAYBE_ADD_ARGUMENTS) -> None:
+        super().__init__(dataset)
+
+    def transform(self, example):
+        # TODO: Process single examples containing `example["document"]` and `example["label"]`.
+        raise NotImplementedError()
+
+    def collate(self, batch):
+        # TODO: Construct a single batch using a list of examples from the `transform` function.
+        raise NotImplementedError()
+
+
+>>>>>>> upstream/master
 class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace, eleczech: transformers.PreTrainedModel,
                  dataset: TextClassificationDataset.Dataset) -> None:
@@ -44,6 +62,7 @@ class Model(npfl138.TrainableModule):
         return self._classifier(cls)  
 
 
+<<<<<<< HEAD
 class TrainableDataset(npfl138.TransformedDataset):
     def __init__(self, dataset: TextClassificationDataset.Dataset, tokenizer, max_length: int = 512) -> None:
         super().__init__(dataset)
@@ -86,6 +105,8 @@ class TrainableDataset(npfl138.TransformedDataset):
         return (input_ids, attention_masks), labels
 
 
+=======
+>>>>>>> upstream/master
 def main(args: argparse.Namespace) -> None:
     # Set the random seed and the number of threads.
     npfl138.startup(args.seed, args.threads)

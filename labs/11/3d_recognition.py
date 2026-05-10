@@ -15,7 +15,7 @@ import torch.nn.functional as F
 # TODO: Define reasonable defaults and optionally more parameters.
 # Also, you can set the number of threads to 0 to use all your CPU cores.
 parser = argparse.ArgumentParser()
-parser.add_argument("--batch_size", default=64, type=int, help="Batch size.")
+parser.add_argument("--batch_size", default=32, type=int, help="Batch size.")
 parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
 parser.add_argument("--modelnet", default=32, type=int, help="ModelNet dimension.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
@@ -80,7 +80,10 @@ def main(args: argparse.Namespace) -> None:
     test = TrainableDataset(modelnet.test, False).dataloader(batch_size=args.batch_size)
 
     model = Model(args, train=train)
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=5e-4)
+    optimizer = torch.optim.Adam([
+        {"params": model.backbone.parameters(), "lr": 1e-5},
+        {"params": model.classifier.parameters(), "lr": 1e-4}, 
+    ])
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=args.epochs * len(train), eta_min=5e-6
     )
