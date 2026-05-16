@@ -117,7 +117,6 @@ class Model(npfl138.TrainableModule):
             features, feature_lens = xs
             yield from self.ctc_decoding(self.forward(features, feature_lens), feature_lens)
 
-<<<<<<< HEAD
 class TrainableDataset(npfl138.TransformedDataset):
     def transform(self, example):
         # TODO: Prepare a single example. The structure of the inputs then has to be reflected
@@ -153,8 +152,6 @@ class TrainableDataset(npfl138.TransformedDataset):
 
         return (features, feature_lens), (labels, label_lens)
     
-=======
->>>>>>> upstream/master
 def main(args: argparse.Namespace) -> None:
     # Set the random seed and the number of threads.
     npfl138.startup(args.seed, args.threads)
